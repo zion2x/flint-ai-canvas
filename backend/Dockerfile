@@ -40,6 +40,7 @@ RUN apk add --no-cache build-base
 
 WORKDIR /src/backend
 COPY backend/go.mod backend/go.sum ./
+COPY backend/third_party ./third_party
 # 模块保留在普通镜像层中，供后续编译及跨 Runner 的 GHA 层缓存复用。
 RUN go mod download
 COPY backend ./
@@ -56,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build set -eu; \
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates tzdata wget \
+RUN apk add --no-cache ca-certificates tzdata wget ffmpeg \
     && addgroup -S app \
     && adduser -S app -G app
 

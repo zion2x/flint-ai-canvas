@@ -175,6 +175,34 @@ func TestTaskTerminalCoordinatorRefundsFailureBeforeProviderRequest(t *testing.T
 	}
 }
 
+func TestTaskTerminalCoordinatorKeepsProviderResultContractFailureUncertain(t *testing.T) {
+	task := &model.Task{ID: "task-1", UserID: "user-1", BillingOrderID: "order-1", Status: model.TaskStatusRunning}
+	billing := &taskTerminalBillingStub{review: false}
+	replay := &taskTerminalReplayStub{}
+	coordinator := newTaskTerminalCoordinatorForTest(
+		&taskTerminalRepositoryStub{task: task},
+		billing,
+		replay,
+		&taskTerminalLoggerStub{},
+		&taskTerminalOutputStub{},
+	)
+	validationErr := errors.New("invalid storyboard result")
+	failure := &providerResultContractError{Err: validationErr}
+
+	if err := coordinator.handleExecutionFailure(task, failure, true, false); !errors.Is(err, validationErr) {
+		t.Fatalf("handleExecutionFailure() error = %v, want %v", err, validationErr)
+	}
+	if task.Status != model.TaskStatusFailed || task.Error != "public: invalid storyboard result" {
+		t.Fatalf("unexpected failed task state: status=%s error=%q", task.Status, task.Error)
+	}
+	if len(billing.uncertain) != 1 || len(billing.refund) != 0 || billing.settleCalls != 0 {
+		t.Fatalf("successful provider call must remain uncertain without review evidence: uncertain=%v refund=%v settle=%d", billing.uncertain, billing.refund, billing.settleCalls)
+	}
+	if len(replay.statuses) != 1 || replay.statuses[0] != model.TaskStatusFailed {
+		t.Fatalf("unexpected replay statuses: %v", replay.statuses)
+	}
+}
+
 func TestTaskTerminalCoordinatorLogsUnrecordedProviderFailure(t *testing.T) {
 	task := &model.Task{ID: "task-1", UserID: "user-1", BillingOrderID: "order-1"}
 	coordinator := newTaskTerminalCoordinatorForTest(

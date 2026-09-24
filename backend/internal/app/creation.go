@@ -449,6 +449,9 @@ func (s *Service) prepareCreationTask(userID string, req CreateTaskRequest) (*mo
 	return task, prepared.Order, sig, err
 }
 func creationQuoteFor(task *model.Task, order *model.BillingOrder, signature string, expires time.Time) CreationQuote {
+	if task.Type == "canvas_text" && task.Operation == "storyboard" {
+		signature = creationHash([]any{signature, task.InputJSON})
+	}
 	quote := CreationQuote{Model: task.Model, BillingMode: "free", Quantity: 1, ExpiresAt: expires}
 	if order != nil {
 		quote.BillingMode = order.BillingMode

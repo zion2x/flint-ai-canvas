@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"infinite-canvas/backend/internal/model"
@@ -112,5 +113,34 @@ func TestTaskRouteExecutorStopsWhenRouteSwitchFails(t *testing.T) {
 	}
 	if len(p.processCalls) != 1 || len(p.finished) != 1 || len(p.logs) != 1 {
 		t.Fatalf("expected one failed route and one warning, calls=%v finished=%v logs=%v", p.processCalls, p.finished, p.logs)
+	}
+}
+
+func TestTaskRouteExecutorStopsAfterProviderResultContractFailure(t *testing.T) {
+	first := &model.RouteAttempt{RouteID: "route-a"}
+	second := &model.RouteAttempt{RouteID: "route-b"}
+	validationErr := errors.New("invalid storyboard result")
+	failure := fmt.Errorf("validate result: %w", &providerResultContractError{Err: validationErr})
+	p := &taskRouteExecutionPortStub{
+		nextAttempts: map[string]*model.RouteAttempt{"route-a": second},
+		processResults: map[string]taskRouteExecutionStubResult{
+			"route-a": {result: map[string]interface{}{"text": "unstructured output"}, err: failure},
+			"route-b": {result: map[string]interface{}{"ok": true}},
+		},
+	}
+	task := &model.Task{ID: "task-1", UserID: "user-1", RouteID: "route-a"}
+
+	result, err := (&taskRouteExecutor{port: p}).execute(context.Background(), task, first)
+	if err != nil {
+		t.Fatalf("execute() error = %v", err)
+	}
+	if !result.providerSucceeded || !errors.Is(result.err, validationErr) {
+		t.Fatalf("provider success or validation error lost: %+v", result)
+	}
+	if len(p.processCalls) != 1 || p.processCalls[0] != "route-a" || len(p.dispatchCalls) != 1 || task.RouteID != "route-a" {
+		t.Fatalf("contract failure triggered another generation: process=%v dispatch=%v route=%s", p.processCalls, p.dispatchCalls, task.RouteID)
+	}
+	if len(p.finished) != 1 || p.finished[0] != "route-a:succeeded" || len(p.logs) != 0 {
+		t.Fatalf("provider attempt was not preserved as succeeded: finished=%v logs=%v", p.finished, p.logs)
 	}
 }

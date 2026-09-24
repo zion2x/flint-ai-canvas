@@ -740,6 +740,10 @@ func skuSelectorForIntent(intent ModelRequestIntent) map[string]string {
 		selector["operation"] = operation
 	}
 	switch normalizeCapability(intent.Capability) {
+	case "text":
+		// 文本业务操作（text、storyboard、Agent 步骤等）共用文本生成价格档，
+		// 只归一化计价选择器，保留任务操作用于业务流程和审计。
+		selector["operation"] = "text_generation"
 	case "video":
 		// 价格档按实际参考素材归类。供应商执行仍可使用 reference_to_video、extend
 		// 等细分操作；计价时视频参考优先归为视频生视频，其余图片参考无论数量

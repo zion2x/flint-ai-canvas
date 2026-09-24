@@ -131,6 +131,8 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 
 后端托管的文本生成通过 `GET /api/tasks/:id/text-events` 返回 `progress`、`delta` 和 `terminal` 事件。`delta` 的递增事件 ID 是断线续传游标，前端使用 `?after=<id>` 恢复；分镜任务复用该通道实时接收阶段和进度，但分镜结构和 Agent 工具参数仍在完整响应结束并校验通过后原子应用，不执行半截 JSON。
 
+普通分镜任务 `canvas_text / storyboard` 在 `app/storyboard_task.go` 编译服务端模板、校验 `shots` 并投影画布 `rows`；`task_creation.go` 在报价和预占前调用，`provider.go` 执行持久化的模板快照。`provider_result_contract.go` 标记上游成功后的结构失败，`task_route_executor.go` 据此阻止再次调用模型并保留计费待核对语义。前端 `canvas-project-domain.ts` 负责补入已连接文本及解析最终镜头行，章节入口复用同一服务端契约。
+
 ## 其他入口
 
 - 旧版 `canvas-agent/` 和 Codex App/MCP 插件已删除；Agent 运行统一由后端云端控制面承载。

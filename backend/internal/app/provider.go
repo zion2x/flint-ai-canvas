@@ -335,7 +335,7 @@ func providerPayloadErrorMessage(raw string) string {
 	return providerErrorWithDetail("模型服务返回失败，请检查请求内容或渠道配置", raw)
 }
 
-func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string, taskProjectID string, taskType string, fallbackPrompt string, rawInput string) (map[string]interface{}, error) {
+func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string, taskProjectID string, taskType string, operation string, fallbackPrompt string, rawInput string) (map[string]interface{}, error) {
 	ctx = withProtocolRegistry(ctx, s.protocolRegistry())
 	var input canvasGenerationInput
 	if err := json.Unmarshal([]byte(rawInput), &input); err != nil {
@@ -348,8 +348,12 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		input.Mode = "video"
 	}
 	promptTemplateOperation := metadataString(input.Metadata, "promptTemplateOperation")
+	storyboard := taskType == "canvas_text" && operation == "storyboard"
+	if storyboard && (input.Mode != "text" || input.AgentRequests != nil || promptTemplateOperation != promptOperationStoryboardPlan) {
+		return nil, BadAuthRequest("分镜任务缺少已编译的服务端模板，请重新创建任务")
+	}
 	// 视频节点的最终 Prompt 只取输入框内容，不能被分镜模板替换；图片和文本仍沿用模板能力。
-	if input.Mode != "video" && promptTemplateOperation != "" {
+	if !storyboard && input.Mode != "video" && promptTemplateOperation != "" {
 		values := metadataStringValues(input.Metadata["promptTemplateVariables"])
 		compiled, compileErr := s.compilePrompt(userID, promptTemplateOperation, values)
 		if compileErr != nil {
@@ -468,6 +472,13 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 			return runAgentToolTask(ctx, input)
 		}
 		result, taskErr := runTextTask(ctx, input)
+		if taskErr == nil && storyboard {
+			projected, contractErr := storyboardTaskResult(rawInput, result)
+			if contractErr != nil {
+				return nil, &providerResultContractError{Err: contractErr}
+			}
+			return projected, nil
+		}
 		if taskErr == nil && promptTemplateOperation != "" {
 			taskErr = validatePromptTemplateResult(promptTemplateOperation, result)
 		}

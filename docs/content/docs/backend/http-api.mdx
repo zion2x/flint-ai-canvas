@@ -76,6 +76,16 @@ description: 信封、错误码与 OpenAPI
 
 `GET /public/appearance` 返回当前 `activeSkin`；管理员通过 `GET/PUT /admin/settings/appearance` 读取、保存完整主题库。外观合同版本 8 新增 `tokens.buttons.light/dark`，字段为 `mode`（`solid|gradient`）、整数 `angle`（0–360）、HEX 色值 `start/end`、`hoverStart/hoverEnd`、`activeStart/activeEnd`、`foreground`。纯色模式使用既有主操作颜色，渐变仅用于主按钮。非法模式、角度、色值或修改锁定经典主题均拒绝保存；整块缺失的旧配置按主题身份补齐。此变更不增加数据表迁移。
 
+## 分镜脚本任务
+
+`POST /tasks` 的 `type=canvas_text`、`operation=storyboard` 使用服务端分镜模板。`input.mode` 必须是 `text`；`prompt` 是剧情与本次要求，`projectStyle`、`characters`、`canvasAssets` 提供画风、角色版本和当前资产，`shotDurationSeconds`、`shotCount` 为零表示自动安排。画布会把已连接的文本正文加入剧情，不要求额外输入 `@引用`。
+
+服务端在报价与积分预占前编译 `storyboard_plan` 模板，执行使用已持久化的模板正文。创作提交的报价签名包含该输入快照，模板变化后原确认不能直接执行。模型输出必须满足 `storyboard-plan/v3` 的非空 `shots` 结构和请求的镜头数量、时长；普通对话、空镜头及无效资产引用不能作为分镜成功。
+
+后端将已校验的 `shots` 转为画布使用的 `rows`：`description` → `plotDescription`、`visualPrompt` → `imageGenerationPrompt`、`videoPrompt` → `videoMotionPrompt`、`assetRefs` → `assetBindings`，角色资产 ID 转为角色名。任务 `resultJson` 包含 `{ mode: "text", title, rows, text }`，其中 `text` 是相同 `{ title, rows }` 的 JSON 字符串。
+
+上游已返回内容但分镜结构校验失败时，任务报告真实失败，不自动换路由再次生成；账单进入待核对流程，不能将已发生的上游调用当成未调用而自动退款。
+
 ## 模型规格报价
 
 ### 管理员批量调价
@@ -124,6 +134,8 @@ description: 信封、错误码与 OpenAPI
 | `POST /models/:id/quote` | 直接提交 `intent`，按前台逻辑模型当前可用线路和价格策略报价 |
 
 `intent` 包含 `capability`（`text/image/video/audio`）、`operation`、`inputs`（素材类型到数量的映射）和 `options`（请求规格）。素材数量必须为 0–128 的整数，再按模型能力限制校验。视频规格包括 `vquality`、`size`、`videoSeconds`、布尔值 `videoGenerateAudio`，显式 `false` 必须保留。
+
+文本请求在价格档匹配时统一使用 `operation=text_generation`。普通文本的 `text`、分镜的 `storyboard`、Agent 操作或未指定操作均使用已配置的文本价格档，不改变任务保存的业务操作。精确文本价格档优先于默认档；停用、未配置及无效价格仍不能用于生成。后台模型测试仅验证上游调用，不代表任务报价和计费校验已经通过。
 
 报价包含 `logicalModelId`（系统渠道直连为空）、`billingMode`、`quantity`、`amountMicrocredits`、`estimated`。视频 Token 报价另有 `videoTokenEstimate`：`formulaTokens`、`reservedTokens`、`outputWidth`、`outputHeight`、`framesPerSecond`、`outputSeconds`、`referenceSeconds`、`referenceDurationEstimated`、`dimensionsEstimated`、`reservationMarginPercent`。
 

@@ -48,7 +48,15 @@ sudo docker compose --env-file .env -f docker-compose.deploy.yml up -d --force-r
 
 脚本会下载与当前 Release 匹配的 Linux amd64/arm64 二进制和 `SHA256SUMS`，生成随机 `CANVAS_UPDATER_TOKEN`，创建 systemd 服务、Socket 目录、状态目录和 `backups/`。Token 只保存在服务器 `.env` 与 root-only 更新器环境文件中。
 
+## 生产镜像的媒体依赖
+
+`backend/Dockerfile` 的最终运行层包含 `ffmpeg` 和 `ffprobe`，时间线服务端渲染、视频播放副本转码及字幕转写的音频预处理使用镜像内的可执行文件。更新已有部署需要重新构建或拉取包含该依赖的新后端镜像并重新创建容器；重启旧容器不会补装依赖。
+
+镜像不包含 whisper.cpp 服务和识别模型。字幕转写仍需单独部署 whisper.cpp，并在后端容器的 `environment` 中显式传入 `CANVAS_WHISPER_BASE_URL`，指向容器可访问的服务地址；只在 `.env` 中填写而未注入容器不会生效。未配置时，字幕转写任务会明确失败，不影响无需该服务的时间线渲染和视频转码。部署验收应检查容器内 `ffmpeg -version`、`ffprobe -version`，并通过真实媒体上传、渲染任务和产物下载验证完整链路。
+
 ## 镜像发布与质量门禁
+
+后端构建阶段在 `go mod download` 前复制 `backend/third_party`，保证 `go.mod` 中使用本地 `replace` 的短信模块可被解析。仅复制 `go.mod` 和 `go.sum` 会导致干净镜像构建失败。
 
 `main` 推送、`v*` 标签和手动发布统一由 `.github/workflows/publish-images.yml` 编排。发布先调用可复用的 `quality.yml`；PR 仍直接运行质量检查。Go 测试、前端格式、类型、Lint、单测和 Chrome E2E 任一失败，都不能进入镜像构建和发布阶段。若仓库规则配置了必需检查，切换后应核对实际 check 名称，避免仍等待旧的独立 push 工作流。
 

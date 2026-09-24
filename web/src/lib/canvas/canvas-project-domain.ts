@@ -101,9 +101,8 @@ export function cinematicStoryboardColumns(columns?: StoryboardColumn[]): Storyb
     ])) as StoryboardColumn[];
 }
 
-// 分镜文本任务的模型侧输出契约，字段与 storyboardRowsFromTask 的解析结构一一对应。
-// 后端只有带 metadata.promptTemplateOperation 的任务才会编译服务端分镜模板（含 JSON 契约），
-// 章节分镜走的是自定义 prompt，缺这段约束时模型会按自然语言习惯返回 Markdown 表格，解析阶段拿不到 rows。
+// 列表模式的视频分析仍走通用文本任务，需要声明 rows 输出结构；
+// operation=storyboard 的专业分镜由服务端模板统一约束，不使用这份契约。
 export function storyboardRowsOutputContract(requirement: string) {
     return [
         "【受保护输出契约】",
@@ -344,14 +343,22 @@ export function storyboardRowFromHandle(nodes: CanvasNodeData[], nodeId: string,
 
 export function expandStoryboardTextMentions(prompt: string, references: CanvasResourceReference[]) {
     let expanded = prompt;
+    const contextBlocks: string[] = [];
+    const included = new Set<string>();
     references.filter((reference) => reference.active && reference.kind === "text" && reference.text?.trim()).forEach((reference) => {
+        const identity = reference.nodeId || reference.id;
+        if (included.has(identity)) return;
+        included.add(identity);
         const replacement = `【项目设定：${reference.title}】\n${reference.text!.trim()}`;
-        for (const token of [canvasResourceMentionToken(reference), `@${reference.label}`, reference.nodeId ? canvasNodeMentionToken(reference.nodeId) : ""]) {
-            if (!token) continue;
-            if (expanded.includes(token)) expanded = expanded.split(token).join(replacement);
+        let mentioned = false;
+        for (const token of new Set([canvasResourceMentionToken(reference), `@${reference.label}`, reference.nodeId ? canvasNodeMentionToken(reference.nodeId) : ""])) {
+            if (!token || !expanded.includes(token)) continue;
+            expanded = expanded.split(token).join(replacement);
+            mentioned = true;
         }
+        if (!mentioned) contextBlocks.push(replacement);
     });
-    return expanded;
+    return contextBlocks.length ? [expanded, ...contextBlocks].filter((part) => part.trim()).join("\n\n") : expanded;
 }
 
 export function getInputSummary(inputs: NodeGenerationInput[]) {

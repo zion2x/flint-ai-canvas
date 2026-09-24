@@ -53,8 +53,9 @@ func (e *taskRouteExecutor) execute(ctx context.Context, task *model.Task, attem
 			return taskRouteExecutionResult{}, stateErr
 		}
 		var deliveryFailure *mediaRecoveryError
-		if errors.As(execution.err, &deliveryFailure) {
-			// The provider succeeded. Delivery must never enter route failover.
+		var contractFailure *providerResultContractError
+		if errors.As(execution.err, &deliveryFailure) || errors.As(execution.err, &contractFailure) {
+			// The provider succeeded. Delivery or validation failures must never trigger another generation.
 			e.port.finishTaskRouteAttempt(attempt, task, nil)
 			execution.providerSucceeded = true
 			return execution, nil
