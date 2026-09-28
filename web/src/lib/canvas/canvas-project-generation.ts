@@ -1,3 +1,4 @@
+import { sha256 } from "@noble/hashes/sha2";
 import { type GenerationTask } from "@/services/api/task-center";
 import { backendProviderConfig, logicalModelIDForConfig, runBackendGenerationTask, type GenerationTaskDependencies } from "@/services/api/generation-task";
 import { configuredModelMatchesCapability, defaultConfig, normalizeModelOptionValue, normalizeRunningHubCapability, resolveModelRequestConfig, type AiConfig, type WorkflowFieldMapping } from "@/stores/use-config-store";
@@ -139,7 +140,7 @@ export type GenerationRetryContext = {
 
 export async function createGenerationRetryContext(retryOf: string, attemptGroupId = retryOf): Promise<GenerationRetryContext> {
     const bytes = new TextEncoder().encode(`generation-retry\0${attemptGroupId}\0${retryOf}`);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    const digest = sha256(bytes);
     const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
     return { retryOf, attemptGroupId, clientOperationId: `retry:${hex}` };
 }
@@ -544,7 +545,19 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
                 : mediaNode.type === CanvasNodeType.Script && mediaNode.height < NODE_DEFAULT_SIZE[CanvasNodeType.Script].height
                   ? { ...mediaNode, height: NODE_DEFAULT_SIZE[CanvasNodeType.Script].height }
                   : mediaNode;
-        const restoredNode = resizedNode.metadata?.status === "loading" ? { ...resizedNode, metadata: { ...resizedNode.metadata, errorDetails: "正在从任务中心恢复生成状态..." } } : resizedNode;
+        const terminalTask = resizedNode.metadata?.taskStatus === "failed" || resizedNode.metadata?.taskStatus === "cancelled";
+        const restoredNode = resizedNode.metadata?.status !== "loading"
+            ? resizedNode
+            : terminalTask
+              ? {
+                    ...resizedNode,
+                    metadata: {
+                        ...resizedNode.metadata,
+                        status: "error" as const,
+                        errorDetails: resizedNode.metadata.errorDetails || (resizedNode.metadata.taskStatus === "cancelled" ? "任务已取消" : "任务失败，正在从任务中心核对原因..."),
+                    },
+                }
+              : { ...resizedNode, metadata: { ...resizedNode.metadata, errorDetails: "正在从任务中心恢复生成状态..." } };
         if (restoredNode !== node) changed = true;
         return restoredNode;
     });
